@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ContextPay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Platypi:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #fbfbf8; --card: #ffffff; --ink: #14161a; --muted: #6b6f78; --line: #e7e6e0;
+    --brand: #0566ff; --brand-soft: #e8f0ff; --good: #12805c; --good-soft: #e5f4ee;
+    --warn: #a35a00; --warn-soft: #fff3e0; --bad: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #0f1012; --card: #17191c; --ink: #ececea; --muted: #9a9ea6; --line: #2a2d31;
+      --brand: #4d8dff; --brand-soft: #14223d; --good: #4cc79a; --good-soft: #10261e; --warn: #f0a640; --warn-soft: #2a1f0e; --bad: #f97066; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 Inter, system-ui, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 16px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  h1 { font: 600 30px/1.1 Platypi, Georgia, serif; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--brand); }
+  .tag { color: var(--muted); margin: 6px 0 0; max-width: 560px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font: 500 12px JetBrains Mono, monospace; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.live { color: var(--good); border-color: var(--good); }
+  .badge.mock { color: var(--warn); border-color: var(--warn); }
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .card h2 { font: 600 13px Inter, sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  .span-4 { grid-column: span 4; } .span-6 { grid-column: span 6; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+  @media (max-width: 860px) { .span-4, .span-6, .span-8 { grid-column: span 12; } }
+  .big { font: 600 34px/1 Platypi, Georgia, serif; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .good { color: var(--good); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  label { font-size: 14px; }
+  input[type=number] { width: 92px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 14px JetBrains Mono, monospace; text-align: right; }
+  button, .btn { appearance: none; border: 0; border-radius: 9px; padding: 9px 14px; font: 600 14px Inter, sans-serif; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  .primary { background: var(--brand); color: #fff; }
+  .paypal { background: #ffc439; color: #111; }
+  .ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  .switch { position: relative; width: 40px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: .15s; cursor: pointer; }
+  .slider::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; }
+  .switch input:checked + .slider { background: var(--brand); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  .approval { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .approval b { font-size: 18px; }
+  .empty { color: var(--muted); font-size: 14px; }
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .feed li { padding: 10px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 74px 1fr; gap: 10px; font-size: 14px; }
+  .feed li:first-child { border-top: 0; }
+  .feed time { color: var(--muted); font: 12px JetBrains Mono, monospace; padding-top: 2px; }
+  .kind { font: 600 11px JetBrains Mono, monospace; text-transform: uppercase; letter-spacing: .04em; margin-right: 6px; }
+  .kind.topup { color: var(--good); } .kind.plan { color: var(--brand); } .kind.approval_requested { color: var(--warn); } .kind.error { color: var(--bad); }
+  .why { color: var(--muted); display: block; margin-top: 2px; }
+  .flash { padding: 10px 14px; border-radius: 10px; background: var(--good-soft); color: var(--good); margin-bottom: 14px; font-weight: 500; }
+  .mono { font-family: JetBrains Mono, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Context<span>Pay</span></h1>
+      <p class="tag">Your coding agent buys its own context compression with PayPal, but only when it pays for itself, and only inside the limits you set.</p>
+    </div>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <div id="flash"></div>
+
+  <div class="grid">
+    <section class="card span-4">
+      <h2>Credit wallet</h2>
+      <div class="big mono" id="balance">$0.00</div>
+      <div class="sub">prepaid SuperCompress credits · <span id="price"></span></div>
+    </section>
+    <section class="card span-4">
+      <h2>Saved on model input</h2>
+      <div class="big mono good" id="saved">$0.00</div>
+      <div class="sub" id="savedSub">nothing compressed yet</div>
+    </section>
+    <section class="card span-4">
+      <h2>Agent spend today</h2>
+      <div class="big mono" id="spent">$0.00</div>
+      <div class="sub" id="spentSub"></div>
+    </section>
+
+    <section class="card span-12" id="approvalsCard" hidden>
+      <h2>Waiting for you</h2>
+      <div id="approvals"></div>
+    </section>
+
+    <section class="card span-6">
+      <h2>Spending rules for the agent</h2>
+      <div class="row"><label for="auto">Let the agent top up on its own</label>
+        <span class="switch"><input type="checkbox" id="auto"><span class="slider" onclick="toggleAuto()"></span></span></div>
+      <div class="row"><label for="perTxn">Most it can spend per purchase</label><span>$ <input type="number" id="perTxn" min="1" step="1"></span></div>
+      <div class="row"><label for="daily">Most it can spend per day</label><span>$ <input type="number" id="daily" min="1" step="1"></span></div>
+      <div class="row"><label for="roi">Only buy if it saves at least</label><span><input type="number" id="roi" min="1" step="0.5"> × cost</span></div>
+      <div class="row"><span class="sub">Anything over these limits comes to you as a PayPal checkout.</span><button class="primary" onclick="saveMandate()">Save rules</button></div>
+    </section>
+
+    <section class="card span-6">
+      <h2>PayPal</h2>
+      <div id="vault"></div>
+      <div class="row" style="margin-top:8px">
+        <span>Top up yourself</span>
+        <span>$ <input type="number" id="manualAmt" value="5" min="1" step="1"> <button class="paypal" onclick="manualTopup()">Pay with PayPal</button></span>
+      </div>
+      <div class="row"><span class="sub">Start over with an empty wallet</span><button class="ghost" onclick="resetAll()">Reset demo</button></div>
+    </section>
+
+    <section class="card span-12">
+      <h2>What the agent did</h2>
+      <ul class="feed" id="feed"></ul>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const usd = (n, d = 2) => "$" + Number(n || 0).toFixed(d);
+let state = null, mandateDirty = false;
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function render() {
+  const s = state;
+  $("badges").innerHTML = [
+    `<span class="badge ${s.paypalMode === "mock" ? "mock" : "live"}">paypal: ${s.paypalMode}</span>`,
+    `<span class="badge">compression: ${s.compressEngine}</span>`,
+    `<span class="badge">planner: ${s.planner}</span>`,
+  ].join("");
+  $("balance").textContent = usd(s.wallet.balanceUsd, 4);
+  $("price").textContent = `${usd(s.prices.compressPerMTok)} per 1M tokens`;
+  $("saved").textContent = usd(s.usage.savedUsd, 4);
+  const u = s.usage;
+  $("savedSub").textContent = u.requests
+    ? `${u.tokensSaved.toLocaleString()} of ${u.tokensIn.toLocaleString()} tokens dropped · paid ${usd(u.spentOnCompressionUsd, 4)} · ${u.spentOnCompressionUsd ? Math.round(u.savedUsd / u.spentOnCompressionUsd) + "× return" : ""}`
+    : "nothing compressed yet";
+  $("spent").textContent = usd(s.spentTodayUsd);
+  $("spentSub").textContent = `of ${usd(s.mandate.dailyCapUsd)} daily limit`;
+
+  if (!mandateDirty) {
+    $("auto").checked = s.mandate.autoTopupEnabled;
+    $("perTxn").value = s.mandate.perTxnCapUsd;
+    $("daily").value = s.mandate.dailyCapUsd;
+    $("roi").value = s.mandate.minRoi;
+  }
+
+  $("vault").innerHTML = s.vault
+    ? `<div class="row"><span>Saved wallet<br><span class="sub mono">${s.vault.payerEmail || "PayPal account"}</span></span><button class="ghost" onclick="removeVault()">Remove</button></div>`
+    : `<div class="row"><span>No wallet saved. Without one, every purchase waits for you.</span><button class="paypal" onclick="saveVault()">Save PayPal for the agent</button></div>`;
+
+  $("approvalsCard").hidden = !s.pendingApprovals.length;
+  $("approvals").innerHTML = s.pendingApprovals.map((p) => `
+    <div class="approval"><div><b class="mono">${usd(p.amountUsd)}</b> for compression credits<span class="why">${escapeHtml(p.reason)}</span></div>
+    <a class="btn paypal" href="${p.approveUrl}">Approve with PayPal</a></div>`).join("");
+
+  $("feed").innerHTML = s.events.length ? s.events.map(feedItem).join("") : `<li><span></span><span class="empty">Nothing yet. Run <span class="mono">npm run agent</span> to start the demo agent.</span></li>`;
+}
+
+function feedItem(e) {
+  const t = new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  let text = "";
+  if (e.type === "topup") text = `${usd(e.amountUsd)} added · ${e.source === "agent" ? "agent paid from saved wallet" : e.source === "human" ? "you approved in PayPal" : e.source}`;
+  else if (e.type === "plan") text = `${e.plan.decision === "buy" ? "wants " + usd(e.plan.amount_usd) : "declined"} for “${escapeHtml(e.job.description)}”<span class="why">${escapeHtml(e.plan.rationale)} · ${escapeHtml(e.plan.planner)}</span>`;
+  else if (e.type === "approval_requested") text = `asked you to approve ${usd(e.amountUsd)}<span class="why">${escapeHtml(e.reason)}</span>`;
+  else if (e.type === "vault_saved") text = `PayPal wallet saved ${e.payerEmail ? "(" + escapeHtml(e.payerEmail) + ")" : ""}`;
+  else if (e.type === "vault_removed") text = "PayPal wallet removed";
+  else if (e.type === "mandate") text = `rules: ${e.mandate.autoTopupEnabled ? "auto top-up on" : "auto top-up off"}, ${usd(e.mandate.perTxnCapUsd)}/purchase, ${usd(e.mandate.dailyCapUsd)}/day, ≥${e.mandate.minRoi}× return`;
+  else if (e.type === "charge_failed") text = `PayPal charge for ${usd(e.amountUsd)} did not complete (${escapeHtml(e.status)})`;
+  else text = escapeHtml(e.message || JSON.stringify(e));
+  return `<li><time>${t}</time><span><span class="kind ${e.type}">${e.type.replace("_", " ")}</span>${text}</span></li>`;
+}
+
+function escapeHtml(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+async function refresh() { try { state = await api("GET", "/api/state"); render(); } catch {} }
+["perTxn", "daily", "roi"].forEach((id) => $(id).addEventListener("input", () => (mandateDirty = true)));
+function toggleAuto() { $("auto").checked = !$("auto").checked; mandateDirty = true; }
+async function saveMandate() {
+  await api("POST", "/api/mandate", { autoTopupEnabled: $("auto").checked, perTxnCapUsd: +$("perTxn").value, dailyCapUsd: +$("daily").value, minRoi: +$("roi").value });
+  mandateDirty = false; flash("Rules saved."); refresh();
+}
+async function saveVault() { const { approveUrl } = await api("POST", "/api/vault/start"); location.href = approveUrl; }
+async function removeVault() { await api("POST", "/api/vault/remove"); refresh(); }
+async function manualTopup() { const { approveUrl } = await api("POST", "/api/topup/checkout", { amountUsd: +$("manualAmt").value }); location.href = approveUrl; }
+async function resetAll() { if (confirm("Reset the demo wallet, rules and history?")) { await api("POST", "/api/reset"); refresh(); } }
+function flash(msg) { $("flash").innerHTML = `<div class="flash">${msg}</div>`; setTimeout(() => ($("flash").innerHTML = ""), 4000); }
+
+const q = new URLSearchParams(location.search);
+const msgs = { "vault=saved": "PayPal wallet saved. The agent can now top up within your rules.", "checkout=approved": "Payment approved. Credits added.", "checkout=cancelled": "Checkout cancelled.", "vault=cancelled": "Wallet setup cancelled." };
+for (const [k, m] of Object.entries(msgs)) { const [a, b] = k.split("="); if (q.get(a) === b) flash(m); }
+if (q.toString()) history.replaceState(null, "", "/");
+
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>
