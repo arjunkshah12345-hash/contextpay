@@ -39,7 +39,7 @@
   .row:first-of-type { border-top: 0; }
   label { font-size: 14px; }
   input[type=number] { width: 92px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 14px JetBrains Mono, monospace; text-align: right; }
-  button, .btn { appearance: none; border: 0; border-radius: 9px; padding: 9px 14px; font: 600 14px Inter, sans-serif; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  button, .btn { appearance: none; border: 0; border-radius: 9px; padding: 9px 14px; font: 600 14px Inter, sans-serif; cursor: pointer; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
   .primary { background: var(--brand); color: #fff; }
   .paypal { background: #ffc439; color: #111; }
   .ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
@@ -174,7 +174,7 @@ function render() {
 }
 
 function feedItem(e) {
-  const t = new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const t = new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   let text = "";
   if (e.type === "topup") text = `${usd(e.amountUsd)} added · ${e.source === "agent" ? "agent paid from saved wallet" : e.source === "human" ? "you approved in PayPal" : e.source}`;
   else if (e.type === "plan") text = `${e.plan.decision === "buy" ? "wants " + usd(e.plan.amount_usd) : "declined"} for “${escapeHtml(e.job.description)}”<span class="why">${escapeHtml(e.plan.rationale)} · ${escapeHtml(e.plan.planner)}</span>`;
@@ -184,7 +184,7 @@ function feedItem(e) {
   else if (e.type === "mandate") text = `rules: ${e.mandate.autoTopupEnabled ? "auto top-up on" : "auto top-up off"}, ${usd(e.mandate.perTxnCapUsd)}/purchase, ${usd(e.mandate.dailyCapUsd)}/day, ≥${e.mandate.minRoi}× return`;
   else if (e.type === "charge_failed") text = `PayPal charge for ${usd(e.amountUsd)} did not complete (${escapeHtml(e.status)})`;
   else text = escapeHtml(e.message || JSON.stringify(e));
-  return `<li><time>${t}</time><span><span class="kind ${e.type}">${e.type.replace("_", " ")}</span>${text}</span></li>`;
+  return `<li><time>${t}</time><span><span class="kind ${e.type}">${e.type.replaceAll("_", " ")}</span>${text}</span></li>`;
 }
 
 function escapeHtml(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
