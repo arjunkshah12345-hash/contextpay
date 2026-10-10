@@ -11,10 +11,14 @@ const BASES = {
   live: "https://api-m.paypal.com",
 };
 
+// Live money needs an explicit second switch, so a stray PAYPAL_ENV=live on a
+// demo host can never move real funds.
+export const liveAllowed = () => process.env.PAYPAL_ENV === "live" && process.env.CONTEXTPAY_ALLOW_LIVE === "1";
+
 export function paypalMode() {
   if (process.env.PAYPAL_MODE === "mock") return "mock";
   if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) return "mock";
-  return process.env.PAYPAL_ENV === "live" ? "live" : "sandbox";
+  return liveAllowed() ? "live" : "sandbox";
 }
 
 let cachedToken = null;
@@ -94,7 +98,7 @@ export async function createCheckoutOrder({ amountUsd, returnUrl, cancelUrl, des
 }
 
 export async function captureOrder(orderId) {
-  if (paypalMode() === "mock") return { id: orderId, status: "COMPLETED", captureId: `MOCK-CAP-${orderId.slice(-8)}` };
+  if (paypalMode() === "mock") return { id: orderId, status: "COMPLETED", captureId: `MOCK-CAP-${orderId.slice(-8)}`, captureStatus: "COMPLETED" };
   const order = await call("capture order", "POST", `/v2/checkout/orders/${orderId}/capture`, {}, `capture-${orderId}`);
   return summarizeOrder(order);
 }
@@ -103,6 +107,10 @@ function summarizeOrder(order) {
   const capture = order.purchase_units?.[0]?.payments?.captures?.[0];
   return { id: order.id, status: order.status, captureId: capture?.id, captureStatus: capture?.status };
 }
+
+// Money has actually moved only when the capture itself completed. An order
+// can be COMPLETED while its capture is PENDING or DECLINED.
+export const isPaid = (summary) => summary.status === "COMPLETED" && (!summary.captureStatus || summary.captureStatus === "COMPLETED");
 
 // ---- Vault: save a PayPal wallet for agent-initiated charges (Vault v3) ------
 
@@ -146,7 +154,8 @@ export async function createPaymentToken(setupTokenId) {
 // mandate before it is ever reached (see mandate.js).
 export async function chargeVault({ paymentTokenId, amountUsd, description, customId, requestId }) {
   if (paypalMode() === "mock") {
-    return { id: `MOCK-ORDER-${requestId.slice(0, 8)}`, status: "COMPLETED", captureId: `MOCK-CAP-${requestId.slice(-8)}` };
+    if (process.env.MOCK_DECLINE_VAULT === "1") return { id: `MOCK-ORDER-${requestId.slice(0, 8)}`, status: "COMPLETED", captureStatus: "DECLINED" };
+    return { id: `MOCK-ORDER-${requestId.slice(0, 8)}`, status: "COMPLETED", captureId: `MOCK-CAP-${requestId.slice(-8)}`, captureStatus: "COMPLETED" };
   }
   const order = await call("vault charge", "POST", "/v2/checkout/orders", {
     intent: "CAPTURE",
@@ -154,10 +163,12 @@ export async function chargeVault({ paymentTokenId, amountUsd, description, cust
     payment_source: {
       paypal: {
         vault_id: paymentTokenId,
+        // paypal_wallet_stored_credential: payer not present, variable
+        // top-ups on an agreed rule (an automatic reload). `usage` is left to
+        // PayPal (DERIVED) because the first agent charge is not SUBSEQUENT.
         stored_credential: {
           payment_initiator: "MERCHANT",
-          payment_type: "UNSCHEDULED",
-          usage: "SUBSEQUENT",
+          usage_pattern: "UNSCHEDULED_PREPAID",
         },
       },
     },
@@ -165,4 +176,14 @@ export async function chargeVault({ paymentTokenId, amountUsd, description, cust
   // Vaulted PayPal orders usually complete on create; capture if they don't.
   if (order.status === "COMPLETED") return summarizeOrder(order);
   return captureOrder(order.id);
+}
+
+// Remove the saved wallet at PayPal too, not just locally.
+export async function deletePaymentToken(paymentTokenId) {
+  if (paypalMode() === "mock") return;
+  try {
+    await call("delete payment token", "DELETE", `/v3/vault/payment-tokens/${encodeURIComponent(paymentTokenId)}`);
+  } catch (e) {
+    if (e.status !== 404) throw e; // already gone is fine
+  }
 }

@@ -4,8 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ContextPay</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230566ff'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif'%3EC%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Platypi:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- AG Grid Community (MIT) powers the purchase ledger. -->
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.2.0/dist/ag-grid-community.min.js"></script>
 <style>
   :root {
     --paper: #fbfbf8; --card: #ffffff; --ink: #14161a; --muted: #6b6f78; --line: #e7e6e0;
@@ -62,6 +65,20 @@
   .why { color: var(--muted); display: block; margin-top: 2px; }
   .flash { padding: 10px 14px; border-radius: 10px; background: var(--good-soft); color: var(--good); margin-bottom: 14px; font-weight: 500; }
   .mono { font-family: JetBrains Mono, monospace; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .counts { display: flex; gap: 18px; align-items: baseline; }
+  .counts div { display: flex; flex-direction: column; }
+  .counts .n { font: 600 30px/1 Platypi, Georgia, serif; }
+  .counts .l { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .ledger-tools { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 10px; }
+  .ledger-tools input { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 14px Inter, sans-serif; min-width: 240px; }
+  #ledger { height: 340px; }
+  .pill { display: inline-block; font: 600 11px JetBrains Mono, monospace; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+  .pill.paid, .pill.approved { background: var(--good-soft); color: var(--good); }
+  .pill.awaiting_approval, .pill.awaiting_payment, .pill.charging { background: var(--warn-soft); color: var(--warn); }
+  .pill.denied, .pill.failed, .pill.expired { background: #fde8e6; color: var(--bad); }
+  .pill.declined { background: var(--brand-soft); color: var(--brand); }
+  .err { padding: 10px 14px; border-radius: 10px; background: #fde8e6; color: var(--bad); margin-bottom: 14px; font-weight: 500; }
 </style>
 </head>
 <body>
@@ -80,12 +97,15 @@
     <section class="card span-4">
       <h2>Credit wallet</h2>
       <div class="big mono" id="balance">$0.00</div>
-      <div class="sub">prepaid SuperCompress credits · <span id="price"></span></div>
+      <div class="sub" id="usageSub">prepaid compression credits</div>
     </section>
     <section class="card span-4">
-      <h2>Saved on model input</h2>
-      <div class="big mono good" id="saved">$0.00</div>
-      <div class="sub" id="savedSub">nothing compressed yet</div>
+      <h2>Agent purchases</h2>
+      <div class="counts">
+        <div><span class="n mono good" id="cPaid">0</span><span class="l">paid on its own</span></div>
+        <div><span class="n mono" id="cBlocked" style="color:var(--warn)">0</span><span class="l">blocked by rules</span></div>
+        <div><span class="n mono" id="cApproved">0</span><span class="l">approved by you</span></div>
+      </div>
     </section>
     <section class="card span-4">
       <h2>Agent spend today</h2>
@@ -105,7 +125,7 @@
       <div class="row"><label for="perTxn">Most it can spend per purchase</label><span>$ <input type="number" id="perTxn" min="1" step="1"></span></div>
       <div class="row"><label for="daily">Most it can spend per day</label><span>$ <input type="number" id="daily" min="1" step="1"></span></div>
       <div class="row"><label for="roi">Only buy if it saves at least</label><span><input type="number" id="roi" min="1" step="0.5"> × cost</span></div>
-      <div class="row"><span class="sub">Anything over these limits comes to you as a PayPal checkout.</span><button class="primary" onclick="saveMandate()">Save rules</button></div>
+      <div class="row"><span class="sub">Anything over these limits stops and waits for you to approve.</span><button class="primary" onclick="saveMandate()">Save rules</button></div>
     </section>
 
     <section class="card span-6">
@@ -116,6 +136,19 @@
         <span>$ <input type="number" id="manualAmt" value="5" min="1" step="1"> <button class="paypal" onclick="manualTopup()">Pay with PayPal</button></span>
       </div>
       <div class="row"><span class="sub">Start over with an empty wallet</span><button class="ghost" onclick="resetAll()">Reset demo</button></div>
+    </section>
+
+    <section class="card span-12">
+      <h2>Purchase ledger</h2>
+      <div class="ledger-tools">
+        <input id="ledgerFilter" type="search" placeholder="Filter: blocked, approved, a job name, a PayPal order id…">
+        <span class="actions">
+          <button class="ghost" onclick="ledgerApi && ledgerApi.exportDataAsCsv({ fileName: 'contextpay-ledger.csv' })">Export CSV</button>
+          <button class="primary" id="demoBtn" onclick="runDemo()">Run the demo agent</button>
+        </span>
+      </div>
+      <div id="ledger"></div>
+      <div class="sub" id="ledgerNote"></div>
     </section>
 
     <section class="card span-12">
@@ -145,14 +178,17 @@ function render() {
     `<span class="badge">planner: ${s.planner}</span>`,
   ].join("");
   $("balance").textContent = usd(s.wallet.balanceUsd, 4);
-  $("price").textContent = `${usd(s.prices.compressPerMTok)} per 1M tokens`;
-  $("saved").textContent = usd(s.usage.savedUsd, 4);
   const u = s.usage;
-  $("savedSub").textContent = u.requests
-    ? `${u.tokensSaved.toLocaleString()} of ${u.tokensIn.toLocaleString()} tokens dropped · paid ${usd(u.spentOnCompressionUsd, 4)} · ${u.spentOnCompressionUsd ? Math.round(u.savedUsd / u.spentOnCompressionUsd) + "× return" : ""}`
-    : "nothing compressed yet";
+  $("usageSub").textContent = u.requests
+    ? `prepaid compression credits · ${u.requests} calls, ${u.tokensIn.toLocaleString()} tokens in`
+    : "prepaid compression credits";
+  $("cPaid").textContent = s.purchaseCounts.paid;
+  $("cBlocked").textContent = s.purchaseCounts.blocked;
+  $("cApproved").textContent = s.purchaseCounts.approved;
   $("spent").textContent = usd(s.spentTodayUsd);
-  $("spentSub").textContent = `of ${usd(s.mandate.dailyCapUsd)} daily limit`;
+  $("spentSub").textContent = `of ${usd(s.mandate.dailyCapUsd)} daily limit (UTC day)`;
+  $("demoBtn").disabled = s.demoAgentRunning;
+  $("demoBtn").textContent = s.demoAgentRunning ? "Demo agent running…" : "Run the demo agent";
 
   if (!mandateDirty) {
     $("auto").checked = s.mandate.autoTopupEnabled;
@@ -162,26 +198,37 @@ function render() {
   }
 
   $("vault").innerHTML = s.vault
-    ? `<div class="row"><span>Saved wallet<br><span class="sub mono">${s.vault.payerEmail || "PayPal account"}</span></span><button class="ghost" onclick="removeVault()">Remove</button></div>`
+    ? `<div class="row"><span>Saved wallet<br><span class="sub mono">${escapeHtml(s.vault.payerEmail || "PayPal account")}</span></span><button class="ghost" onclick="removeVault()">Remove</button></div>`
     : `<div class="row"><span>No wallet saved. Without one, every purchase waits for you.</span><button class="paypal" onclick="saveVault()">Save PayPal for the agent</button></div>`;
 
   $("approvalsCard").hidden = !s.pendingApprovals.length;
   $("approvals").innerHTML = s.pendingApprovals.map((p) => `
-    <div class="approval"><div><b class="mono">${usd(p.amountUsd)}</b> for compression credits<span class="why">${escapeHtml(p.reason)}</span></div>
-    <a class="btn paypal" href="${p.approveUrl}">Approve with PayPal</a></div>`).join("");
+    <div class="approval"><div><b class="mono">${usd(p.amountUsd)}</b> for “${escapeHtml(p.job?.description || "compression credits")}”
+      <span class="why">Blocked: ${escapeHtml(p.blockedReason)}</span>
+      <span class="why">Planner: ${escapeHtml(p.plan?.rationale || "")}</span></div>
+    <div class="actions">
+      ${s.vault ? `<button class="primary" onclick="approve('${p.id}')">Approve, charge saved wallet</button>` : ""}
+      <a class="btn paypal" href="${escapeHtml(p.approveUrl)}">${s.vault ? "Or pay with PayPal" : "Approve with PayPal"}</a>
+      <button class="ghost" onclick="deny('${p.id}')">Deny</button>
+    </div></div>`).join("");
 
-  $("feed").innerHTML = s.events.length ? s.events.map(feedItem).join("") : `<li><span></span><span class="empty">Nothing yet. Run <span class="mono">npm run agent</span> to start the demo agent.</span></li>`;
+  $("feed").innerHTML = s.events.length ? s.events.map(feedItem).join("") : `<li><span></span><span class="empty">Nothing yet. Click <b>Run the demo agent</b>, or run <span class="mono">npm run agent</span>.</span></li>`;
 }
 
 function feedItem(e) {
   const t = new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   let text = "";
-  if (e.type === "topup") text = `${usd(e.amountUsd)} added · ${e.source === "agent" ? "agent paid from saved wallet" : e.source === "human" ? "you approved in PayPal" : e.source}`;
+  if (e.type === "topup") text = `${usd(e.amountUsd)} added · ${e.source === "agent" ? "agent paid from saved wallet, inside your rules" : e.source === "human" ? "you approved it" : escapeHtml(e.source)}`;
   else if (e.type === "plan") text = `${e.plan.decision === "buy" ? "wants " + usd(e.plan.amount_usd) : "declined"} for “${escapeHtml(e.job.description)}”<span class="why">${escapeHtml(e.plan.rationale)} · ${escapeHtml(e.plan.planner)}</span>`;
   else if (e.type === "approval_requested") text = `asked you to approve ${usd(e.amountUsd)}<span class="why">${escapeHtml(e.reason)}</span>`;
   else if (e.type === "vault_saved") text = `PayPal wallet saved ${e.payerEmail ? "(" + escapeHtml(e.payerEmail) + ")" : ""}`;
   else if (e.type === "vault_removed") text = "PayPal wallet removed";
   else if (e.type === "mandate") text = `rules: ${e.mandate.autoTopupEnabled ? "auto top-up on" : "auto top-up off"}, ${usd(e.mandate.perTxnCapUsd)}/purchase, ${usd(e.mandate.dailyCapUsd)}/day, ≥${e.mandate.minRoi}× return`;
+  else if (e.type === "approval_granted") text = `you approved ${usd(e.amountUsd)} on the saved wallet. the agent resumes`;
+  else if (e.type === "approval_denied") text = `you denied ${usd(e.amountUsd)}. the agent continues without buying`;
+  else if (e.type === "approval_expired") text = `nobody approved ${usd(e.amountUsd)} in time. the agent continues without buying`;
+  else if (e.type === "demo_started") text = "demo agent started";
+  else if (e.type === "demo_finished") text = `demo agent finished${e.code ? " with exit code " + e.code : ""}`;
   else if (e.type === "charge_failed") text = `PayPal charge for ${usd(e.amountUsd)} did not complete (${escapeHtml(e.status)})`;
   else text = escapeHtml(e.message || JSON.stringify(e));
   return `<li><time>${t}</time><span><span class="kind ${e.type}">${e.type.replaceAll("_", " ")}</span>${text}</span></li>`;
@@ -189,25 +236,89 @@ function feedItem(e) {
 
 function escapeHtml(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
-async function refresh() { try { state = await api("GET", "/api/state"); render(); } catch {} }
+async function refresh() {
+  try {
+    state = await api("GET", "/api/state"); render();
+    if (ledgerApi) ledgerApi.setGridOption("rowData", await api("GET", "/api/ledger"));
+  } catch {}
+}
+
+// ---- Purchase ledger (AG Grid Community) ----
+let ledgerApi = null;
+const STATUS_LABEL = { paid: "paid by agent", awaiting_approval: "waiting for you", approved: "approved by you", denied: "denied", expired: "expired", failed: "failed", declined: "planner declined", awaiting_payment: "checkout open", charging: "charging" };
+function initLedger() {
+  if (!window.agGrid) { $("ledgerNote").textContent = "The ledger grid could not load (offline?). The activity feed below still shows every purchase."; return; }
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = agGrid.themeQuartz.withParams(dark
+    ? { backgroundColor: "#17191c", foregroundColor: "#ececea", headerBackgroundColor: "#0f1012", borderColor: "#2a2d31", accentColor: "#4d8dff", fontFamily: "Inter, system-ui, sans-serif" }
+    : { backgroundColor: "#ffffff", headerBackgroundColor: "#fbfbf8", borderColor: "#e7e6e0", accentColor: "#0566ff", fontFamily: "Inter, system-ui, sans-serif" });
+  ledgerApi = agGrid.createGrid($("ledger"), {
+    theme,
+    rowData: [],
+    getRowId: (p) => p.data.id,
+    animateRows: true,
+    defaultColDef: { sortable: true, filter: true, resizable: true },
+    columnDefs: [
+      { field: "createdAt", headerName: "When", width: 110, sort: "desc", valueFormatter: (p) => p.value ? new Date(p.value).toLocaleTimeString([], { hour12: false }) : "" },
+      { field: "origin", headerName: "Asked by", width: 120, valueFormatter: (p) => p.value === "agent" ? "agent" : p.value === "you" ? "you" : "" },
+      { field: "job", headerName: "Job", flex: 2, minWidth: 220, tooltipField: "job" },
+      { field: "amountUsd", headerName: "Amount", width: 110, type: "rightAligned", filter: "agNumberColumnFilter", valueFormatter: (p) => p.value ? usd(p.value) : "", cellClass: "mono" },
+      { field: "status", headerName: "Outcome", width: 170, cellRenderer: (p) => `<span class="pill ${p.value}">${STATUS_LABEL[p.value] || p.value}</span>`, getQuickFilterText: (p) => p.value + " " + (STATUS_LABEL[p.value] || "") },
+      { field: "blockedReason", headerName: "Why it was blocked", flex: 2, minWidth: 220, tooltipField: "blockedReason", valueFormatter: (p) => p.value || "" },
+      { field: "method", headerName: "Paid with", width: 130, valueFormatter: (p) => p.value || "" },
+      { field: "rationale", headerName: "Planner rationale", flex: 3, minWidth: 260, tooltipField: "rationale", valueFormatter: (p) => p.value || "" },
+      { field: "paypalOrderId", headerName: "PayPal order", width: 190, cellClass: "mono", valueFormatter: (p) => p.value || "" },
+      { field: "paypalCaptureId", headerName: "PayPal capture", width: 190, cellClass: "mono", hide: true },
+    ],
+    overlayNoRowsTemplate: "<span>No purchases yet.</span>",
+    onRowDataUpdated: (e) => updateTotals(e.api),
+    onFilterChanged: (e) => updateTotals(e.api),
+  });
+  function updateTotals(api) {
+    const rows = []; api.forEachNodeAfterFilter((n) => rows.push(n.data));
+    const total = rows.filter((r) => r.status === "paid" || r.status === "approved").reduce((a, r) => a + r.amountUsd, 0);
+    api.setGridOption("pinnedBottomRowData", rows.length ? [{ id: "total", job: `${rows.length} purchase${rows.length === 1 ? "" : "s"}`, amountUsd: total, status: "", method: "settled total" }] : []);
+  }
+  $("ledgerFilter").addEventListener("input", (e) => ledgerApi.setGridOption("quickFilterText", e.target.value));
+}
 ["perTxn", "daily", "roi"].forEach((id) => $(id).addEventListener("input", () => (mandateDirty = true)));
 function toggleAuto() { $("auto").checked = !$("auto").checked; mandateDirty = true; }
 async function saveMandate() {
   await api("POST", "/api/mandate", { autoTopupEnabled: $("auto").checked, perTxnCapUsd: +$("perTxn").value, dailyCapUsd: +$("daily").value, minRoi: +$("roi").value });
   mandateDirty = false; flash("Rules saved."); refresh();
 }
-async function saveVault() { const { approveUrl } = await api("POST", "/api/vault/start"); location.href = approveUrl; }
-async function removeVault() { await api("POST", "/api/vault/remove"); refresh(); }
-async function manualTopup() { const { approveUrl } = await api("POST", "/api/topup/checkout", { amountUsd: +$("manualAmt").value }); location.href = approveUrl; }
-async function resetAll() { if (confirm("Reset the demo wallet, rules and history?")) { await api("POST", "/api/reset"); refresh(); } }
+async function saveVault() { try { const { approveUrl } = await api("POST", "/api/vault/start"); location.href = approveUrl; } catch (e) { error(e.message); } }
+async function removeVault() { try { await api("POST", "/api/vault/remove"); } catch (e) { error(e.message); } refresh(); }
+async function manualTopup() { try { const { approveUrl } = await api("POST", "/api/topup/checkout", { amountUsd: +$("manualAmt").value }); location.href = approveUrl; } catch (e) { error(e.message); } }
+async function approve(id) {
+  try { await api("POST", `/api/approvals/${id}/approve`); flash("Approved. The agent picks up where it stopped."); }
+  catch (e) { error(e.message); }
+  refresh();
+}
+async function deny(id) {
+  try { await api("POST", `/api/approvals/${id}/deny`); flash("Denied. The agent continues without buying."); }
+  catch (e) { error(e.message); }
+  refresh();
+}
+async function runDemo() {
+  try { await api("POST", "/api/demo/run"); flash("Demo agent started. Watch the ledger."); }
+  catch (e) { error(e.message); }
+  refresh();
+}
+function error(msg) { $("flash").innerHTML = `<div class="err">${escapeHtml(msg)}</div>`; setTimeout(() => ($("flash").innerHTML = ""), 6000); }
+async function resetAll() {
+  if (!confirm("Reset the demo wallet, rules and history?")) return;
+  try { await api("POST", "/api/reset"); } catch (e) { error(e.message); }
+  refresh();
+}
 function flash(msg) { $("flash").innerHTML = `<div class="flash">${msg}</div>`; setTimeout(() => ($("flash").innerHTML = ""), 4000); }
 
 const q = new URLSearchParams(location.search);
-const msgs = { "vault=saved": "PayPal wallet saved. The agent can now top up within your rules.", "checkout=approved": "Payment approved. Credits added.", "checkout=cancelled": "Checkout cancelled.", "vault=cancelled": "Wallet setup cancelled." };
+const msgs = { "vault=saved": "PayPal wallet saved. The agent can now top up within your rules.", "checkout=approved": "Payment approved. Credits added, and a waiting agent resumes.", "checkout=cancelled": "Checkout cancelled.", "vault=cancelled": "Wallet setup cancelled.", "vault=mismatch": "That PayPal approval did not match the wallet setup in progress. Try again.", "checkout=unknown": "That checkout was already handled or is unknown." };
 for (const [k, m] of Object.entries(msgs)) { const [a, b] = k.split("="); if (q.get(a) === b) flash(m); }
 if (q.toString()) history.replaceState(null, "", "/");
 
-refresh(); setInterval(refresh, 2000);
+initLedger(); refresh(); setInterval(refresh, 2000);
 </script>
 </body>
 </html>

@@ -1,8 +1,7 @@
 {
   "name": "contextpay",
   "version": "0.1.0",
-  "description": "Coding agents that pay for their own context compression — PayPal Vault + Claude + SuperCompress",
-  "main": "index.js",
+  "description": "Coding agents that pay for their own context compression with PayPal, inside limits a human sets",
   "scripts": {
     "test": "node --test",
     "start": "node src/server.js",
