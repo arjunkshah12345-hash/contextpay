@@ -6,13 +6,24 @@ const SC_URL = process.env.SUPERCOMPRESS_URL || "https://www.supercompress.dev/a
 
 export const estimateTokens = (text) => Math.ceil(text.length / 4);
 
+// COMPRESS_ENGINE=local forces the offline filter even when a key is set.
+export const compressEngine = () =>
+  process.env.SUPERCOMPRESS_API_KEY && process.env.COMPRESS_ENGINE !== "local" ? "supercompress" : "local-fallback";
+
 export async function compress({ context, query }) {
-  if (process.env.SUPERCOMPRESS_API_KEY) {
-    const res = await fetch(SC_URL, {
-      method: "POST",
-      headers: { "X-API-Key": process.env.SUPERCOMPRESS_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ context, query, source: "contextpay" }),
-    });
+  if (compressEngine() === "supercompress") {
+    let res;
+    try {
+      res = await fetch(SC_URL, {
+        method: "POST",
+        headers: { "X-API-Key": process.env.SUPERCOMPRESS_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ context, query, source: "contextpay" }),
+        signal: AbortSignal.timeout(Number(process.env.SUPERCOMPRESS_TIMEOUT_MS || 30_000)),
+      });
+    } catch (e) {
+      // The agent should keep working if the hosted API is unreachable.
+      return { ...localCompress({ context, query }), engine: "local-fallback (supercompress unreachable)" };
+    }
     if (!res.ok) throw new Error(`SuperCompress ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const r = await res.json();
     return {
