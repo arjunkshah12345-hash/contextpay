@@ -5,9 +5,13 @@
 //   job 1 is small: the planner buys a little and the agent pays on its own,
 //         within the mandate, using the PayPal wallet you saved.
 //   job 2 is big: the purchase is over your per-purchase limit, so the agent
-//         stops and asks you to approve a PayPal checkout.
+//         stops and asks you. Approve it on the dashboard (one click on the
+//         saved wallet, or a PayPal checkout) and the agent carries on where
+//         it stopped. Deny it and the agent finishes the job uncompressed.
 //
 // Usage: npm run agent [-- --no-wait]
+// Env:   CONTEXTPAY_URL (default http://localhost:4242), AGENT_TOKEN if the
+//        server requires one.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,13 +20,19 @@ const BASE = process.env.CONTEXTPAY_URL || `http://localhost:${process.env.PORT 
 const WAIT = !process.argv.includes("--no-wait");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const c = { dim: "\x1b[2m", bold: "\x1b[1m", green: "\x1b[32m", yellow: "\x1b[33m", cyan: "\x1b[36m", reset: "\x1b[0m" };
+const plain = process.env.NO_COLOR || !process.stdout.isTTY;
+const c = plain
+  ? { dim: "", bold: "", green: "", yellow: "", cyan: "", reset: "" }
+  : { dim: "\x1b[2m", bold: "\x1b[1m", green: "\x1b[32m", yellow: "\x1b[33m", cyan: "\x1b[36m", reset: "\x1b[0m" };
 const say = (...a) => console.log(...a);
 
 async function api(method, route, body) {
   const res = await fetch(BASE + route, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(process.env.AGENT_TOKEN ? { Authorization: `Bearer ${process.env.AGENT_TOKEN}` } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: res.status, body: await res.json() };
@@ -60,7 +70,7 @@ function sourceBundle() {
 
 async function ensureCredits(job) {
   const { body: state } = await api("GET", "/api/state");
-  const projectedCost = (job.estimated_tokens / 1e6) * state.prices.compressPerMTok;
+  const projectedCost = (job.estimated_tokens / 1e6) * state.prices.creditPerMTok;
   if (state.wallet.balanceUsd >= projectedCost) {
     say(c.dim + `  wallet $${state.wallet.balanceUsd.toFixed(4)} covers projected $${projectedCost.toFixed(4)}` + c.reset);
     return true;
@@ -82,16 +92,24 @@ async function buy(job, why) {
     say(`  ✘ planner declined: not worth buying. continuing uncompressed.`);
     return false;
   }
+  if (body.status === "failed") {
+    say(`  ✘ PayPal did not complete the $${body.amount_usd.toFixed(2)} charge. continuing uncompressed.`);
+    return false;
+  }
   if (body.status === "awaiting_human") {
-    say(c.bold + `  ⏸ $${body.amount_usd.toFixed(2)} needs your approval: ${body.reason}` + c.reset);
-    say(`    approve in the dashboard (${BASE}) or open:\n    ${c.cyan}${body.approve_url}${c.reset}`);
+    say(c.bold + `  ⏸ blocked by your rules: ${body.reason}. waiting for you.` + c.reset);
+    say(`    approve or deny on the dashboard (${body.dashboard_url || BASE}), or pay via PayPal:\n    ${c.cyan}${body.approve_url}${c.reset}`);
     if (!WAIT) return false;
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 900; i++) {
       await sleep(2000);
       const { body: a } = await api("GET", `/api/agent/approvals/${body.approval_id}`);
       if (a.status === "approved") {
-        say(c.green + `  ✔ approved. wallet now $${a.balance_usd.toFixed(4)}` + c.reset);
+        say(c.green + `  ✔ you approved $${a.amount_usd.toFixed(2)}. wallet now $${a.balance_usd.toFixed(4)}. resuming.` + c.reset);
         return true;
+      }
+      if (a.status === "denied" || a.status === "expired") {
+        say(`  ✘ purchase ${a.status}. continuing the job uncompressed.`);
+        return false;
       }
     }
     say("  gave up waiting for approval.");
@@ -110,10 +128,7 @@ async function compressStep(label, context, query, job) {
   }
   if (r.status !== 200) throw new Error(`compress failed: ${r.body.error}`);
   const b = r.body;
-  say(
-    `  ${label.padEnd(34)} ${String(b.original_tokens).padStart(7)} → ${String(b.kept_tokens).padStart(6)} tok` +
-      `  paid $${b.charged_usd.toFixed(4)}  saved ${c.green}$${b.saved_usd.toFixed(4)}${c.reset}  [${b.engine}]`
-  );
+  say(`  ${label.padEnd(34)} ${String(b.original_tokens).padStart(7)} tok in   paid $${b.charged_usd.toFixed(4)}   [${b.engine}]`);
   return b;
 }
 
@@ -139,13 +154,16 @@ async function main() {
     for (let i = 0; i < 3; i++) {
       await compressStep(`package ${i + 1}: require() call sites`, src.repeat(6) + ciLog("esm.test.ts", 4000), "require module.exports import", job2);
     }
+  } else {
+    say(c.dim + "  job 2 runs without compression: full context goes to the model." + c.reset);
   }
 
   const { body: end } = await api("GET", "/api/state");
   const u = end.usage;
   say(`\n${c.bold}Summary${c.reset}`);
-  say(`  compressed ${u.tokensIn.toLocaleString()} tokens, dropped ${u.tokensSaved.toLocaleString()} before they reached the model`);
-  say(`  spent $${u.spentOnCompressionUsd.toFixed(4)} on compression, saved ${c.green}$${u.savedUsd.toFixed(4)}${c.reset} in model input (at $${end.prices.downstreamPerMTok}/1M)`);
+  const pc = end.purchaseCounts;
+  say(`  ${u.requests} compression calls, ${u.tokensIn.toLocaleString()} tokens in, $${u.spentOnCompressionUsd.toFixed(4)} of credits used`);
+  say(`  purchases: ${pc.paid} paid by the agent, ${pc.blocked} blocked by your rules, ${pc.approved} approved by you`);
   say(`  agent spend today $${end.spentTodayUsd.toFixed(2)} of $${end.mandate.dailyCapUsd.toFixed(2)}; wallet $${end.wallet.balanceUsd.toFixed(4)}`);
 }
 

@@ -1,0 +1,46 @@
+# Render Blueprint: one Node web service running the ContextPay dashboard,
+# PayPal return URLs, the agent API and the demo agent.
+#
+# Deploys with no keys at all: PayPal runs in mock mode and the planner falls
+# back to its heuristic, both labelled on the dashboard. Add PayPal sandbox
+# credentials to use the real Vault and Orders APIs.
+#
+# State lives in a JSON file on the instance disk, which Render's free plan
+# resets on each deploy or restart. That is fine for a demo; attach a disk
+# (paid plans) and point CONTEXTPAY_DB at it to keep history.
+services:
+  - type: web
+    name: contextpay
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # PayPal sandbox app (developer.paypal.com > Apps & Credentials), with
+      # "Save payment methods" enabled. Leave blank for mock mode.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_ENV
+        value: sandbox
+      # Claude purchasing planner. Leave blank for the heuristic planner.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Hosted compression engine. Leave blank for the local fallback filter.
+      - key: SUPERCOMPRESS_API_KEY
+        sync: false
+      # PayPal return URLs default to RENDER_EXTERNAL_URL, which Render sets.
+      # Set PUBLIC_URL only if you add a custom domain.
+      # Judges can press "Run the demo agent" and "Reset demo" on the hosted
+      # dashboard. Set either to "0" to switch it off.
+      - key: ALLOW_DEMO_AGENT
+        value: "1"
+      - key: ALLOW_RESET
+        value: "1"
+      - key: APPROVAL_TTL_MINUTES
+        value: "30"

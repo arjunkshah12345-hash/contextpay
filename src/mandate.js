@@ -5,14 +5,19 @@
 import { getState, spentTodayUsd } from "./store.js";
 
 export const PRICES = {
-  // SuperCompress pay-as-you-go: dollars per 1M input tokens compressed.
-  compressPerMTok: Number(process.env.COMPRESS_PRICE_PER_MTOK || 0.1),
-  // What the downstream model charges per 1M input tokens (default: Claude Opus 5.5).
+  // ContextPay's demo credit rate: dollars of prepaid credit consumed per 1M
+  // input tokens sent through /v1/compress. A configurable demo assumption.
+  creditPerMTok: Number(process.env.CREDIT_PRICE_PER_MTOK || 0.125),
+  // What the downstream model charges per 1M input tokens. Used only to judge
+  // whether a purchase is worth it. Configurable.
   downstreamPerMTok: Number(process.env.DOWNSTREAM_PRICE_PER_MTOK || 4),
 };
 
-export const compressCostUsd = (tokensIn) => (tokensIn / 1e6) * PRICES.compressPerMTok;
-export const savedUsd = (tokensSaved) => (tokensSaved / 1e6) * PRICES.downstreamPerMTok;
+// The largest single purchase anyone can be asked to approve.
+export const MAX_PURCHASE_USD = 500;
+
+export const creditCostUsd = (tokensIn) => (tokensIn / 1e6) * PRICES.creditPerMTok;
+export const modelInputUsd = (tokens) => (tokens / 1e6) * PRICES.downstreamPerMTok;
 
 /**
  * Returns { allowed: true } or { allowed: false, reason } for an agent-initiated
